@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "LIVE JET AUTO - Minutes 1-4-8 Actives 🇨🇮"
+    return "LIVE JET AUTO - 08:18 + Code COK225 Actif 🇨🇮"
 
 # --- CONFIGURATION ---
 API_TOKEN = os.getenv('API_TOKEN')
@@ -25,13 +25,11 @@ ID_VIDEO_LIVE = "https://t.me/gagnantpro1xbet/138958"
 
 TZ_CI = pytz.timezone('Africa/Abidjan')
 
-# --- LOGIQUE DES MINUTES 1, 4, 8 ---
+# --- LOGIQUE DE CALCUL DU PROCHAIN SIGNAL ---
 def get_next_target_time(now):
-    # Liste des unités cibles
     targets = [1, 4, 8]
     current_unit = now.minute % 10
     
-    # Trouver la prochaine unité dans la liste
     next_unit = None
     for t in targets:
         if t > current_unit:
@@ -39,7 +37,6 @@ def get_next_target_time(now):
             break
             
     if next_unit is None:
-        # Si on a dépassé 8, on passe à l'unité 1 de la dizaine suivante
         diff = (10 - current_unit) + 1
     else:
         diff = next_unit - current_unit
@@ -55,13 +52,9 @@ def auto_signal_thread():
         try:
             now = datetime.now(TZ_CI)
             
-            # On envoie la prédiction dès qu'on entre dans une nouvelle minute
-            # et que la minute précédente (celle du signal) est finie
             if now.minute != last_sent_minute:
-                # On vérifie si on vient juste de finir un signal (minutes 2, 5, 9 ou 0 pour le cycle)
                 if now.minute % 10 in [2, 5, 9, 0]:
                     last_sent_minute = now.minute
-                    
                     target_time = get_next_target_time(now)
                     
                     random.seed(target_time.timestamp())
@@ -69,12 +62,11 @@ def auto_signal_thread():
                     prev = round(random.uniform(1.5, 2.0), 1)
                     random.seed()
 
-                    t_start = target_time.strftime('%H:%M')
-                    t_end = (target_time + timedelta(minutes=1)).strftime('%H:%M')
+                    t_signal = target_time.strftime('%H:%M')
 
                     caption = (f"🚀 **PROCHAIN SIGNAL EN PRÉPARATION**\n"
                                f"━━━━━━━━━━━━━━━━━━\n"
-                               f"📍 **SIGNAL** 🇨🇮 : `{t_start} À {t_end}`\n"
+                               f"📍 **SIGNAL** 🇨🇮 : `{t_signal}`\n"
                                f"📈 **COTE** : `{cote_val}X À 10X` \n"
                                f"━━━━━━━━━━━━━━━━━━\n"
                                f"🎯 **SÉCURITÉ** : `{prev}X` \n"
@@ -99,7 +91,6 @@ def auto_signal_thread():
 
 @bot.message_handler(commands=['start'])
 def start(msg):
-    # Enregistrement silencieux
     user = users_col.find_one({"_id": msg.from_user.id})
     if not user:
         users_col.insert_one({"_id": msg.from_user.id, "is_vip": False})
@@ -107,7 +98,14 @@ def start(msg):
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("📊 STATISTIQUES", "🔗 LIEN 1WIN")
     
-    bot.send_message(msg.chat.id, "🚀 **LIVE JET AUTO 🇨🇮**\n\nLes signaux (Minutes 1, 4, 8) s'affichent ici automatiquement.", reply_markup=markup)
+    welcome_text = (f"🚀 **BIENVENUE SUR LIVE JET AUTO 🇨🇮**\n\n"
+                    f"Pour débloquer les signaux automatiques (Minutes 1, 4, 8) :\n\n"
+                    f"1️⃣ Inscrivez-vous sur **1win** via le lien ci-dessous.\n"
+                    f"2️⃣ Utilisez le Code Promo : **COK225**\n"
+                    f"3️⃣ Envoyez votre **ID joueur** ici pour l'activation.\n\n"
+                    f"🔗 **Lien :** {LIEN_INSCRIPTION}")
+    
+    bot.send_message(msg.chat.id, welcome_text, reply_markup=markup, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: m.text == "📊 STATISTIQUES")
 def stats(msg):
@@ -116,21 +114,21 @@ def stats(msg):
 
 @bot.message_handler(func=lambda m: m.text == "🔗 LIEN 1WIN")
 def link(msg):
-    bot.send_message(msg.chat.id, f"🔗 **LIEN :**\n{LIEN_INSCRIPTION}")
+    bot.send_message(msg.chat.id, f"🔗 **Lien d'inscription :**\n{LIEN_INSCRIPTION}\n\n🎁 Code Promo : **COK225**")
 
 @bot.message_handler(func=lambda m: m.text.isdigit() and len(m.text) >= 7)
 def handle_id(msg):
-    bot.send_message(msg.chat.id, "⏳ **Analyse de l'ID en cours...**")
+    bot.send_message(msg.chat.id, "⏳ **Analyse de l'ID en cours...**\nVérification du code **COK225**.")
     markup = telebot.types.InlineKeyboardMarkup()
     markup.add(telebot.types.InlineKeyboardButton("✅ ACTIVER", callback_data=f"val_{msg.from_user.id}"))
-    bot.send_message(ADMIN_ID, f"🆕 **DEMANDE**\n🆔 ID : `{msg.text}`", reply_markup=markup, parse_mode='Markdown')
+    bot.send_message(ADMIN_ID, f"🆕 **DEMANDE D'ACCÈS**\n🆔 ID Joueur : `{msg.text}`", reply_markup=markup, parse_mode='Markdown')
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("val_"))
 def accept_vip(c):
     uid = int(c.data.split("_")[1])
     users_col.update_one({"_id": uid}, {"$set": {"is_vip": True}}, upsert=True)
-    bot.send_message(uid, "🌟 **ACTIVÉ !**\nPréparez-vous pour le prochain signal.")
-    bot.answer_callback_query(c.id, "Activé !")
+    bot.send_message(uid, "🌟 **ACTIVÉ !**\n\nFélicitations, vous êtes maintenant VIP. Le prochain signal va s'afficher ici automatiquement !")
+    bot.answer_callback_query(c.id, "Utilisateur activé !")
 
 if __name__ == "__main__":
     bot.remove_webhook()

@@ -1,5 +1,6 @@
 import telebot, random, os, threading, time
 from datetime import datetime, timedelta
+import pytz # Pour l'heure de Côte d'Ivoire
 from flask import Flask
 from pymongo import MongoClient
 
@@ -7,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "LIVE JET AUTO - Diffusion & Relance active"
+    return "LIVE JET AUTO - Affichage 🇨🇮 OK"
 
 # --- CONFIGURATION ---
 API_TOKEN = os.getenv('API_TOKEN')
@@ -22,6 +23,11 @@ config_col = db['config_live']
 
 LIEN_INSCRIPTION = "https://lkbb.cc/e2d8"
 ID_VIDEO_LIVE = "https://t.me/gagnantpro1xbet/138958" 
+
+# Fuseau horaire Côte d'Ivoire
+TZ_CI = pytz.timezone('Africa/Abidjan')
+
+admin_state = {}
 
 # --- FONCTIONS SYSTÈME ---
 def get_user(u_id):
@@ -42,25 +48,27 @@ def auto_signal_thread():
     
     while True:
         try:
-            now = datetime.now()
+            # Heure actuelle en Côte d'Ivoire
+            now = datetime.now(TZ_CI)
             base_min = get_base_minute()
             
-            # 1. ENVOI DES SIGNAUX AUX VIP (Toutes les 5 min)
+            # 1. SIGNAUX VIP (Toutes les 5 min)
             if (now.minute - base_min) % 5 == 0 and now.minute != last_sent_signal:
                 last_sent_signal = now.minute
                 
                 random.seed(now.replace(second=0, microsecond=0).timestamp())
-                cote = round(random.uniform(2.10, 9.85), 2)
-                prev = round(random.uniform(1.50, 2.10), 2)
+                # On génère une côte entre 2.1 et 9.9
+                cote_val = round(random.uniform(2.10, 9.85), 1)
+                prev = round(random.uniform(1.50, 2.00), 1)
                 random.seed()
 
-                caption = (f"🎰 **SIGNAL LIVE EN COURS**\n"
+                t_start = now.strftime('%H:%M')
+                t_end = (now + timedelta(minutes=1)).strftime('%H:%M')
+
+                caption = (f"🚀 **SIGNAL LIVE EN COURS**\n"
                            f"━━━━━━━━━━━━━━━━━━\n"
-                           f"📍 **SIGNAL** : `{now.strftime('%H:%M')}`\n"
-                           f"📈 **OBJECTIF** : `{cote}X` \n"
-                           f"━━━━━━━━━━━━━━━━━━\n"
-                           f"⚠️ **RATTRAPAGE** : `{(now + timedelta(minutes=2)).strftime('%H:%M')}`\n"
-                           f"📈 **OBJECTIF** : `4.00X` \n"
+                           f"📍 **SIGNAL** 🇨🇮 : `{t_start} À {t_end}`\n"
+                           f"📈 **COTE** : `{cote_val}X À 10X` \n"
                            f"━━━━━━━━━━━━━━━━━━\n"
                            f"🎯 **SÉCURITÉ** : `{prev}X` \n"
                            f"━━━━━━━━━━━━━━━━━━")
@@ -74,21 +82,18 @@ def auto_signal_thread():
                     try: bot.send_video(v['_id'], ID_VIDEO_LIVE, caption=caption, reply_markup=btn, parse_mode='Markdown')
                     except: pass
 
-            # 2. ENVOI DE RELANCE AUX NON-VIP (Toutes les 15 min)
+            # 2. RELANCE NON-VIP (Toutes les 15 min)
             if (now.minute % 15 == 0) and now.minute != last_sent_ad:
                 last_sent_ad = now.minute
-                
                 msg_ad = (f"⚠️ **ACCÈS BLOQUÉ !**\n\n"
                           f"Le bot vient d'envoyer un signal gagnant aux membres VIP. 💰\n\n"
                           f"👉 **Pour débloquer les signaux automatiques :**\n"
                           f"1. Créez un compte 1win avec le code **COK225**\n"
-                          f"2. Envoyez votre ID joueur ici même pour activation.")
-                
+                          f"2. Envoyez votre ID joueur ici même.")
                 gratuits = users_col.find({"is_vip": False})
                 for g in gratuits:
                     try: bot.send_message(g['_id'], msg_ad)
                     except: pass
-
                 time.sleep(30)
         except: pass
         time.sleep(10)
@@ -99,15 +104,25 @@ def auto_signal_thread():
 def start(msg):
     u = get_user(msg.from_user.id)
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("📊 STATISTIQUES", "🔗 LIEN 1WIN")
+    btns = ["📊 STATISTIQUES", "🔗 LIEN 1WIN"]
+    if msg.from_user.id == ADMIN_ID:
+        btns.append("⚙️ CONFIG LIVE")
+    markup.add(*btns)
     
     status = "🌟 ACCÈS VIP ACTIF" if u.get('is_vip') else "⚠️ ACCÈS LIMITÉ"
-    
-    bot.send_message(msg.chat.id, 
-                     f"🚀 **LIVE JET AUTO**\n\n"
-                     f"Statut : `{status}`\n"
-                     f"Les signaux arrivent ici automatiquement toutes les 5 minutes.", 
-                     reply_markup=markup, parse_mode='Markdown')
+    bot.send_message(msg.chat.id, f"🚀 **LIVE JET AUTO**\n\nStatut : `{status}`\nSignaux auto toutes les 5 min.", reply_markup=markup, parse_mode='Markdown')
+
+@bot.message_handler(func=lambda m: m.text == "⚙️ CONFIG LIVE" and m.from_user.id == ADMIN_ID)
+def config_admin(msg):
+    admin_state[ADMIN_ID] = "WAIT_LIVE"
+    bot.send_message(ADMIN_ID, "🛠 **RÉGLAGE LIVE**\nEntrez la minute de base (0-59) :")
+
+@bot.message_handler(func=lambda m: admin_state.get(ADMIN_ID) == "WAIT_LIVE" and m.from_user.id == ADMIN_ID)
+def save_config(msg):
+    if msg.text.isdigit():
+        config_col.update_one({"_id": "settings_live"}, {"$set": {"minute": int(msg.text)}}, upsert=True)
+        bot.send_message(ADMIN_ID, f"✅ **Cycle Live synchronisé sur la minute {msg.text}**")
+    admin_state[ADMIN_ID] = None
 
 @bot.message_handler(func=lambda m: m.text == "📊 STATISTIQUES")
 def stats(msg):
@@ -118,11 +133,9 @@ def stats(msg):
 def link(msg):
     bot.send_message(msg.chat.id, f"🔗 **TON LIEN POUR JOUER :**\n{LIEN_INSCRIPTION}")
 
-# Handler pour recevoir les ID (pour activation)
 @bot.message_handler(func=lambda m: m.text.isdigit() and len(m.text) >= 7)
 def handle_id(msg):
-    bot.send_message(msg.chat.id, "⏳ **Analyse de l'ID en cours...**\nLe bot vérifiera votre inscription sous le code **COK225**.")
-    # Notification à l'admin pour activation
+    bot.send_message(msg.chat.id, "⏳ **Analyse de l'ID en cours...**\nInscription sous le code **COK225** requise.")
     markup = telebot.types.InlineKeyboardMarkup()
     markup.add(telebot.types.InlineKeyboardButton("✅ ACTIVER", callback_data=f"val_{msg.from_user.id}"))
     bot.send_message(ADMIN_ID, f"🆕 **DEMANDE LIVE JET**\n🆔 ID : `{msg.text}`", reply_markup=markup, parse_mode='Markdown')
@@ -131,7 +144,7 @@ def handle_id(msg):
 def accept_vip(c):
     uid = int(c.data.split("_")[1])
     users_col.update_one({"_id": uid}, {"$set": {"is_vip": True}}, upsert=True)
-    bot.send_message(uid, "🌟 **FÉLICITATIONS !**\nVotre accès VIP LIVE JET est activé. Les signaux vont tomber automatiquement !")
+    bot.send_message(uid, "🌟 **FÉLICITATIONS !**\nVIP LIVE JET activé. Les signaux vont tomber automatiquement !")
     bot.answer_callback_query(c.id, "Activé !")
 
 if __name__ == "__main__":

@@ -27,7 +27,7 @@ TZ_CI = pytz.timezone('Africa/Abidjan')
 
 # --- LOGIQUE DE CALCUL DU PROCHAIN SIGNAL ---
 def get_next_target_time(now):
-    targets = [2, 5, 9]
+    targets = [1, 4, 8]
     current_unit = now.minute % 10
     
     next_unit = None
@@ -43,7 +43,7 @@ def get_next_target_time(now):
         
     target_time = now + timedelta(minutes=diff)
     # AJOUT DES 20 SECONDES FIXES ICI
-    return target_time.replace(second=20, microsecond=0)
+    return target_time.replace(second=40, microsecond=0)
 
 # --- SYSTÈME DE DIFFUSION ---
 def auto_signal_thread():
@@ -64,7 +64,7 @@ def auto_signal_thread():
                     random.seed()
 
                     # AFFICHAGE AVEC LES 20 SECONDES
-                    t_signal = target_time.strftime('%H:%M:20')
+                    t_signal = target_time.strftime('%H:%M:40')
 
                     caption = (f"🚀 **PROCHAIN SIGNAL EN PRÉPARATION**\n"
                                f"━━━━━━━━━━━━━━━━━━\n"

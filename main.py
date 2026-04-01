@@ -27,7 +27,7 @@ TZ_CI = pytz.timezone('Africa/Abidjan')
 
 # --- LOGIQUE DE CALCUL DU PROCHAIN SIGNAL ---
 def get_next_target_time(now):
-    targets = [1, 4, 8]
+    targets = [2, 5, 9]
     current_unit = now.minute % 10
     
     next_unit = None

@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "LIVE JET AUTO - 08:18 + Code COK225 Actif 🇨🇮"
+    return "LIVE JET AUTO - 08:18:20 + Code COK225 Actif 🇨🇮"
 
 # --- CONFIGURATION ---
 API_TOKEN = os.getenv('API_TOKEN')
@@ -42,7 +42,8 @@ def get_next_target_time(now):
         diff = next_unit - current_unit
         
     target_time = now + timedelta(minutes=diff)
-    return target_time.replace(second=0, microsecond=0)
+    # AJOUT DES 20 SECONDES FIXES ICI
+    return target_time.replace(second=20, microsecond=0)
 
 # --- SYSTÈME DE DIFFUSION ---
 def auto_signal_thread():
@@ -62,7 +63,8 @@ def auto_signal_thread():
                     prev = round(random.uniform(1.5, 2.0), 1)
                     random.seed()
 
-                    t_signal = target_time.strftime('%H:%M')
+                    # AFFICHAGE AVEC LES 20 SECONDES
+                    t_signal = target_time.strftime('%H:%M:20')
 
                     caption = (f"🚀 **PROCHAIN SIGNAL EN PRÉPARATION**\n"
                                f"━━━━━━━━━━━━━━━━━━\n"

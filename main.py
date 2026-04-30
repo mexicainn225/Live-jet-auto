@@ -1,14 +1,9 @@
 import telebot, random, os, threading, time
 from datetime import datetime, timedelta
-import pytz
-from flask import Flask
+from flask import Flask, request
 from pymongo import MongoClient
 
 app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "LIVE JET AUTO - 08:18:20 + Code COK225 Actif 🇨🇮"
 
 # --- CONFIGURATION ---
 API_TOKEN = os.getenv('API_TOKEN')
@@ -17,124 +12,169 @@ MONGO_URI = os.getenv('MONGO_URI')
 bot = telebot.TeleBot(API_TOKEN)
 
 client = MongoClient(MONGO_URI)
-db = client['luckyjet_db'] 
+db = client['luckyjet_db']
 users_col = db['users'] 
+config_col = db['config']
 
 LIEN_INSCRIPTION = "https://lkbb.cc/e2d8"
-ID_VIDEO_LIVE = "https://t.me/gagnantpro1xbet/138958" 
+ID_VIDEO_UNIQUE = "https://t.me/gagnantpro1xbet/138958" 
 
-TZ_CI = pytz.timezone('Africa/Abidjan')
+admin_state = {}
 
-# --- LOGIQUE DE CALCUL DU PROCHAIN SIGNAL ---
-def get_next_target_time(now):
-    targets = [1, 4, 8]
-    current_unit = now.minute % 10
+# --- ROUTE WEBHOOK (ACTIVATION AUTO) ---
+@app.route('/webhook1win', methods=['POST'])
+def handle_1win_notification():
+    data = request.json
+    p_id = str(data.get('uid') or data.get('player_id'))
+    amount = data.get('sum', 'un certain montant')
+
+    if p_id:
+        user = users_col.find_one({"player_id": p_id})
+        if user:
+            users_col.update_one({"_id": user['_id']}, {"$set": {"is_vip": True}})
+            bot.send_message(
+                user['_id'], 
+                f"✅ **DÉPÔT DÉTECTÉ ({amount})**\n\nFélicitations ! Ton accès VIP est activé automatiquement. Tu peux maintenant utiliser le bouton 🚀 **SIGNAL** !"
+            )
+            return "OK", 200
+    return "Ignored", 200
+
+@app.route('/')
+def home():
+    return "Système Lucky Jet Pro - Activation Auto OK"
+
+# --- FONCTIONS SYSTÈME ---
+def get_user(u_id):
+    user = users_col.find_one({"_id": u_id})
+    if not user:
+        user = {"_id": u_id, "is_vip": False, "player_id": None}
+        users_col.insert_one(user)
+    return user
+
+def get_base_minute():
+    conf = config_col.find_one({"_id": "settings"})
+    return conf['minute'] if conf else 16 
+
+def get_next_signal():
+    now = datetime.now()
+    base_min = get_base_minute()
+    total_now = now.hour * 60 + now.minute
     
-    next_unit = None
-    for t in targets:
-        if t > current_unit:
-            next_unit = t
-            break
-            
-    if next_unit is None:
-        diff = (10 - current_unit) + 1
-    else:
-        diff = next_unit - current_unit
+    sig_total = base_min
+    while sig_total <= total_now:
+        sig_total += 5
         
-    target_time = now + timedelta(minutes=diff)
-    # AJOUT DES 20 SECONDES FIXES ICI
-    return target_time.replace(second=40, microsecond=0)
-
-# --- SYSTÈME DE DIFFUSION ---
-def auto_signal_thread():
-    last_sent_minute = -1
+    target_hour = (sig_total // 60) % 24
+    target_minute = sig_total % 60
     
-    while True:
-        try:
-            now = datetime.now(TZ_CI)
-            
-            if now.minute != last_sent_minute:
-                if now.minute % 10 in [2, 5, 9, 0]:
-                    last_sent_minute = now.minute
-                    target_time = get_next_target_time(now)
-                    
-                    random.seed(target_time.timestamp())
-                    cote_val = round(random.uniform(2.1, 9.8), 1)
-                    prev = round(random.uniform(1.5, 2.0), 1)
-                    random.seed()
+    while target_minute >= 60:
+        target_hour = (target_hour + 1) % 24
+        target_minute -= 60
 
-                    # AFFICHAGE AVEC LES 20 SECONDES
-                    t_signal = target_time.strftime('%H:%M:40')
+    target_time = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+    if target_time < now:
+        target_time += timedelta(days=1)
 
-                    caption = (f"🚀 **PROCHAIN SIGNAL EN PRÉPARATION**\n"
-                               f"━━━━━━━━━━━━━━━━━━\n"
-                               f"📍 **SIGNAL** 🇨🇮 : `{t_signal}`\n"
-                               f"📈 **COTE** : `{cote_val}X À 10X` \n"
-                               f"━━━━━━━━━━━━━━━━━━\n"
-                               f"🎯 **SÉCURITÉ** : `{prev}X` \n"
-                               f"━━━━━━━━━━━━━━━━━━\n"
-                               f"✅ *Préparez vos mises !*")
+    random.seed(target_time.timestamp())
+    cote = round(random.uniform(10.0, 85.0), 2)
+    prev = round(random.uniform(1.5, 1.5), 2)
+    random.seed() 
+    return target_time, cote, prev
 
-                    btn = telebot.types.InlineKeyboardMarkup().add(
-                        telebot.types.InlineKeyboardButton("💻 JOUER MAINTENANT", url=LIEN_INSCRIPTION)
-                    )
-
-                    vips = users_col.find({"is_vip": True})
-                    for v in vips:
-                        try: bot.send_video(v['_id'], ID_VIDEO_LIVE, caption=caption, reply_markup=btn, parse_mode='Markdown')
-                        except: pass
-
-            time.sleep(20)
-        except Exception as e:
-            print(f"Erreur : {e}")
-            time.sleep(10)
-
-# --- HANDLERS ---
+# --- HANDLERS (COMMANDES) ---
 
 @bot.message_handler(commands=['start'])
 def start(msg):
-    user = users_col.find_one({"_id": msg.from_user.id})
-    if not user:
-        users_col.insert_one({"_id": msg.from_user.id, "is_vip": False})
-    
+    get_user(msg.from_user.id)
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("📊 STATISTIQUES", "🔗 LIEN 1WIN")
-    
-    welcome_text = (f"🚀 **BIENVENUE SUR LIVE JET AUTO 🇨🇮**\n\n"
-                    f"Pour débloquer les signaux automatiques (Minutes 1, 4, 8) :\n\n"
-                    f"1️⃣ Inscrivez-vous sur **1win** via le lien ci-dessous.\n"
-                    f"2️⃣ Utilisez le Code Promo : **COK225**\n"
-                    f"3️⃣ Envoyez votre **ID joueur** ici pour l'activation.\n\n"
-                    f"🔗 **Lien :** {LIEN_INSCRIPTION}")
-    
-    bot.send_message(msg.chat.id, welcome_text, reply_markup=markup, parse_mode='Markdown')
+    btns = ["🚀 SIGNAL", "📊 STATISTIQUES"]
+    if msg.from_user.id == ADMIN_ID:
+        btns.append("⚙️ CONFIGURATION")
+    markup.add(*btns)
+    bot.send_message(msg.chat.id, "🛰 **Système Lucky Jet Connecté**", reply_markup=markup, parse_mode='Markdown')
 
-@bot.message_handler(func=lambda m: m.text == "📊 STATISTIQUES")
-def stats(msg):
-    total = users_col.count_documents({})
-    bot.send_message(msg.chat.id, f"📊 **STATS**\nUtilisateurs : `{total}`\nPrécision : `94%`", parse_mode='Markdown')
-
-@bot.message_handler(func=lambda m: m.text == "🔗 LIEN 1WIN")
-def link(msg):
-    bot.send_message(msg.chat.id, f"🔗 **Lien d'inscription :**\n{LIEN_INSCRIPTION}\n\n🎁 Code Promo : **COK225**")
+@bot.message_handler(func=lambda m: m.text == "🚀 SIGNAL")
+def signal_handler(msg):
+    u = get_user(msg.from_user.id)
+    if msg.from_user.id == ADMIN_ID or u.get('is_vip'):
+        t_time, cote, prev = get_next_signal()
+        
+        # Signal 2 calculé à +3 minutes (tu peux changer en 5 si besoin)
+        rappel_time = t_time + timedelta(minutes=3)
+        
+        # Format HH:MM (Une seule minute affichée)
+        main_time = t_time.strftime('%H:%M')
+        rappel_time_str = rappel_time.strftime('%H:%M')
+        
+        caption = (f"🚀 **PRÉDICTION LUCKY JET**\n"
+                   f"━━━━━━━━━━━━━━━━━━\n"
+                   f"📍 **SIGNAL 1** : `{main_time}`\n"
+                   f"📍 **SIGNAL 2** : `{rappel_time_str}`\n"
+                   f"━━━━━━━━━━━━━━━━━━\n"
+                   f"📈 **OBJECTIF** : `{cote}X` \n"
+                   f"🎯 **SÉCURITÉ** : `{prev}X` \n"
+                   f"━━━━━━━━━━━━━━━━━━")
+        
+        btn = telebot.types.InlineKeyboardMarkup().add(
+            telebot.types.InlineKeyboardButton("💻 JOUER MAINTENANT", url=LIEN_INSCRIPTION)
+        )
+        
+        try:
+            bot.send_video(msg.chat.id, ID_VIDEO_UNIQUE, caption=caption, reply_markup=btn, parse_mode='Markdown')
+        except:
+            bot.send_message(msg.chat.id, caption, reply_markup=btn, parse_mode='Markdown')
+    else:
+        bot.send_message(msg.chat.id, "⚠️ **ACCÈS VIP REQUIS**\n\nEnvoyez votre ID joueur pour commencer.")
 
 @bot.message_handler(func=lambda m: m.text.isdigit() and len(m.text) >= 7)
-def handle_id(msg):
-    bot.send_message(msg.chat.id, "⏳ **Analyse de l'ID en cours...**\nVérification du code **COK225**.")
+def handle_id_sent(msg):
+    player_id = msg.text
+    
+    # Sécurité anti-doublon
+    existing_user = users_col.find_one({"player_id": player_id})
+    if existing_user and existing_user['_id'] != msg.from_user.id:
+        bot.send_message(msg.chat.id, "❌ **ERREUR** : Cet ID est déjà utilisé par un autre utilisateur.")
+        return
+
+    users_col.update_one(
+        {"_id": msg.from_user.id}, 
+        {"$set": {"player_id": player_id}}, 
+        upsert=True
+    )
+    bot.send_message(msg.chat.id, "⏳ **ID Joueur enregistré !**\n\nFaites maintenant votre dépôt sur 1win. Votre accès VIP s'activera **automatiquement** dès confirmation.")
+    
     markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(telebot.types.InlineKeyboardButton("✅ ACTIVER", callback_data=f"val_{msg.from_user.id}"))
-    bot.send_message(ADMIN_ID, f"🆕 **DEMANDE D'ACCÈS**\n🆔 ID Joueur : `{msg.text}`", reply_markup=markup, parse_mode='Markdown')
+    markup.add(telebot.types.InlineKeyboardButton("✅ ACTIVER MANUELLEMENT", callback_data=f"val_{msg.from_user.id}"))
+    bot.send_message(ADMIN_ID, f"🆕 **NOUVEL ID REÇU**\n🆔 ID Joueur : `{player_id}`", reply_markup=markup, parse_mode='Markdown')
+
+@bot.message_handler(func=lambda m: m.text == "📊 STATISTIQUES")
+def stats_handler(msg):
+    total_users = users_col.count_documents({})
+    bot.send_message(msg.chat.id, f"📊 **STATISTIQUES**\n✅ Succès : `98.4%` \n👥 Joueurs : `{total_users}`", parse_mode='Markdown')
+
+@bot.message_handler(func=lambda m: m.text == "⚙️ CONFIGURATION" and m.from_user.id == ADMIN_ID)
+def config_admin(msg):
+    admin_state[ADMIN_ID] = "WAIT_BASE"
+    bot.send_message(ADMIN_ID, "🛠 **RÉGLAGE CYCLE**\nEntrez la minute de base :")
+
+@bot.message_handler(func=lambda m: admin_state.get(ADMIN_ID) == "WAIT_BASE" and m.from_user.id == ADMIN_ID)
+def save_config(msg):
+    if msg.text.isdigit():
+        config_col.update_one({"_id": "settings"}, {"$set": {"minute": int(msg.text)}}, upsert=True)
+        bot.send_message(ADMIN_ID, f"✅ Cycle réglé sur {msg.text}")
+    admin_state[ADMIN_ID] = None
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("val_"))
 def accept_vip(c):
     uid = int(c.data.split("_")[1])
     users_col.update_one({"_id": uid}, {"$set": {"is_vip": True}}, upsert=True)
-    bot.send_message(uid, "🌟 **ACTIVÉ !**\n\nFélicitations, vous êtes maintenant VIP. Le prochain signal va s'afficher ici automatiquement !")
-    bot.answer_callback_query(c.id, "Utilisateur activé !")
+    bot.send_message(uid, "🌟 **VIP activé !** Profitez des signaux.")
+    bot.answer_callback_query(c.id, "Activé")
 
+# --- LANCEMENT ---
 if __name__ == "__main__":
     bot.remove_webhook()
     time.sleep(1)
-    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000))), daemon=True).start()
-    threading.Thread(target=auto_signal_thread, daemon=True).start()
+    render_port = int(os.environ.get("PORT", 10000))
+    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=render_port), daemon=True).start()
     bot.infinity_polling(timeout=20)

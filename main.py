@@ -76,8 +76,10 @@ def get_next_signal():
         target_time += timedelta(days=1)
 
     random.seed(target_time.timestamp())
-    cote = round(random.uniform(10.0, 85.0), 2)
-    prev = round(random.uniform(1.5, 1.5), 2)
+    # Objectif entre 30 et 130
+    cote = round(random.uniform(30.0, 130.0), 2)
+    # Sécurité entre 10 et 15
+    prev = round(random.uniform(10.0, 15.0), 2)
     random.seed() 
     return target_time, cote, prev
 
@@ -99,17 +101,12 @@ def signal_handler(msg):
     if msg.from_user.id == ADMIN_ID or u.get('is_vip'):
         t_time, cote, prev = get_next_signal()
         
-        # Signal 2 calculé à +3 minutes (tu peux changer en 5 si besoin)
-        rappel_time = t_time + timedelta(minutes=3)
-        
-        # Format HH:MM (Une seule minute affichée)
+        # Format HH:MM (Signal unique)
         main_time = t_time.strftime('%H:%M')
-        rappel_time_str = rappel_time.strftime('%H:%M')
         
         caption = (f"🚀 **PRÉDICTION LUCKY JET**\n"
                    f"━━━━━━━━━━━━━━━━━━\n"
-                   f"📍 **SIGNAL 1** : `{main_time}`\n"
-                   f"📍 **SIGNAL 2** : `{rappel_time_str}`\n"
+                   f"📍 **SIGNAL** : `{main_time}`\n"
                    f"━━━━━━━━━━━━━━━━━━\n"
                    f"📈 **OBJECTIF** : `{cote}X` \n"
                    f"🎯 **SÉCURITÉ** : `{prev}X` \n"
@@ -130,7 +127,6 @@ def signal_handler(msg):
 def handle_id_sent(msg):
     player_id = msg.text
     
-    # Sécurité anti-doublon
     existing_user = users_col.find_one({"player_id": player_id})
     if existing_user and existing_user['_id'] != msg.from_user.id:
         bot.send_message(msg.chat.id, "❌ **ERREUR** : Cet ID est déjà utilisé par un autre utilisateur.")
